@@ -3,3 +3,4 @@
 .venv/
 *.dat
 *.bin
+.rustface-temp/

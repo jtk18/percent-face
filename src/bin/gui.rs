@@ -4,7 +4,7 @@
 
 use eframe::egui;
 use image::{DynamicImage, Rgba, RgbaImage};
-use percent_face::{dlib::load_dlib_model, BoundingBox, GrayImage, ShapePredictor};
+use percent_face::{dlib::load_dlib_model, BoundingBox, FaceMetrics, GrayImage, ShapePredictor};
 use rustface::{Detector, FaceInfo, ImageData};
 use std::f32::consts::PI;
 use std::path::PathBuf;
@@ -22,25 +22,26 @@ fn main() -> eframe::Result<()> {
     )
 }
 
-/// Calculated face metrics
+/// Extended metrics for GUI display (adds image-relative calculations)
 #[derive(Clone, Default)]
-struct FaceMetrics {
-    bbox_area: f32,           // Area of detection bounding box
-    landmark_area: f32,       // Area of face polygon from landmarks (jawline)
-    estimated_head_area: f32, // Full head area (actual if 81-point, estimated if 68-point)
-    image_area: f32,          // Total image area
-    has_forehead_landmarks: bool, // True if using 81-point model with actual forehead points
+struct GuiFaceMetrics {
+    /// Core metrics from the library
+    metrics: FaceMetrics,
+    /// Bounding box area from detector
+    bbox_area: f32,
+    /// Total image area for percentage calculations
+    image_area: f32,
 }
 
-impl FaceMetrics {
+impl GuiFaceMetrics {
     fn bbox_percent(&self) -> f32 {
         if self.image_area > 0.0 { self.bbox_area / self.image_area * 100.0 } else { 0.0 }
     }
-    fn landmark_percent(&self) -> f32 {
-        if self.image_area > 0.0 { self.landmark_area / self.image_area * 100.0 } else { 0.0 }
+    fn face_percent(&self) -> f32 {
+        if self.image_area > 0.0 { self.metrics.jawline_area / self.image_area * 100.0 } else { 0.0 }
     }
     fn head_percent(&self) -> f32 {
-        if self.image_area > 0.0 { self.estimated_head_area / self.image_area * 100.0 } else { 0.0 }
+        if self.image_area > 0.0 { self.metrics.head_area / self.image_area * 100.0 } else { 0.0 }
     }
 }
 
@@ -57,7 +58,7 @@ struct FaceApp {
 
     // Detection results
     faces: Vec<FaceInfo>,
-    face_metrics: Vec<FaceMetrics>,
+    face_metrics: Vec<GuiFaceMetrics>,
     status: String,
 
     // Settings
@@ -263,7 +264,7 @@ impl FaceApp {
             );
 
             let bbox_area = (bbox.width() * bbox.height()) as f32;
-            let mut metrics = FaceMetrics {
+            let mut gui_metrics = GuiFaceMetrics {
                 bbox_area,
                 image_area,
                 ..Default::default()
@@ -280,25 +281,10 @@ impl FaceApp {
 
                 let landmarks = model.predict(&gray, &face_bbox);
 
-                // Calculate face area from landmarks
-                if landmarks.points.len() >= 68 {
-                    // Jawline is points 0-16
-                    let jawline: Vec<_> = landmarks.points[0..=16].to_vec();
-                    metrics.landmark_area = polygon_area(&jawline);
-
+                // Calculate metrics using library
+                if let Some(metrics) = FaceMetrics::from_shape(&landmarks) {
+                    // Draw forehead outline (yellow)
                     if landmarks.points.len() == 81 {
-                        // 81-point model: use actual forehead landmarks (68-80)
-                        // Forehead points go from right to left: 68 (right temple) to 80 (left temple)
-                        // Full head outline: jawline (0-16) + forehead (reversed: 68-80)
-                        let mut head_polygon = jawline.clone();
-                        // Add forehead points in order (they go right-to-left, matching jawline end)
-                        for i in 68..=80 {
-                            head_polygon.push(landmarks.points[i]);
-                        }
-                        metrics.estimated_head_area = polygon_area(&head_polygon);
-                        metrics.has_forehead_landmarks = true;
-
-                        // Draw forehead outline (yellow)
                         for i in 68..80 {
                             draw_line(
                                 &mut rgba,
@@ -321,33 +307,24 @@ impl FaceApp {
                             Rgba([255, 255, 0, 255]),
                         );
                     } else {
-                        // 68-point model: estimate forehead from eyebrow positions
+                        // 68-point model: draw estimated head top
                         let eyebrow_top = landmarks.points[17..=26]
                             .iter()
                             .map(|p| p.y)
                             .fold(f32::MAX, f32::min);
-
                         let chin_y = landmarks.points[8].y;
                         let face_height = chin_y - eyebrow_top;
-                        let forehead_height = face_height * 0.6;
-                        let head_top_y = eyebrow_top - forehead_height;
+                        let head_top_y = eyebrow_top - face_height * 0.6;
 
-                        let left_temple = percent_face::Point::new(landmarks.points[0].x, head_top_y);
-                        let right_temple = percent_face::Point::new(landmarks.points[16].x, head_top_y);
-
-                        let mut head_polygon = jawline.clone();
-                        head_polygon.push(right_temple);
-                        head_polygon.push(left_temple);
-                        metrics.estimated_head_area = polygon_area(&head_polygon);
-
-                        // Draw estimated head top (yellow dashed line)
                         draw_line(
                             &mut rgba,
-                            left_temple.x as i32, left_temple.y as i32,
-                            right_temple.x as i32, right_temple.y as i32,
+                            landmarks.points[0].x as i32, head_top_y as i32,
+                            landmarks.points[16].x as i32, head_top_y as i32,
                             Rgba([255, 255, 0, 255]),
                         );
                     }
+
+                    gui_metrics.metrics = metrics;
                 }
 
                 // Draw landmarks (red dots)
@@ -363,7 +340,7 @@ impl FaceApp {
                 }
             }
 
-            self.face_metrics.push(metrics);
+            self.face_metrics.push(gui_metrics);
         }
 
         // Convert to egui texture
@@ -518,22 +495,39 @@ impl eframe::App for FaceApp {
                 ui.add_space(8.0);
                 ui.label(format!("Faces found: {}", self.faces.len()));
 
-                for (i, (face, metrics)) in self.faces.iter().zip(self.face_metrics.iter()).enumerate() {
+                for (i, (face, gui_metrics)) in self.faces.iter().zip(self.face_metrics.iter()).enumerate() {
                     let bbox = face.bbox();
-                    ui.add_space(4.0);
-                    ui.label(format!("Face {}:", i + 1));
-                    ui.label(format!("  Box: {}x{} at ({}, {})",
-                        bbox.width(), bbox.height(), bbox.x(), bbox.y()));
-                    ui.label(format!("  Box area: {:.1}% of image", metrics.bbox_percent()));
+                    let m = &gui_metrics.metrics;
 
-                    if metrics.landmark_area > 0.0 {
-                        ui.label(format!("  Jawline area: {:.1}%", metrics.landmark_percent()));
-                        if metrics.has_forehead_landmarks {
-                            ui.label(format!("  Head area: {:.1}%", metrics.head_percent()));
-                        } else {
-                            ui.label(format!("  Head area (est.): {:.1}%", metrics.head_percent()));
+                    ui.add_space(4.0);
+                    ui.collapsing(format!("Face {}", i + 1), |ui| {
+                        ui.label(format!("Detection box: {}x{}", bbox.width(), bbox.height()));
+                        ui.label(format!("Box: {:.1}% of image", gui_metrics.bbox_percent()));
+
+                        if m.jawline_area > 0.0 {
+                            ui.add_space(4.0);
+                            ui.label("Image coverage:");
+                            ui.label(format!("  Face: {:.1}%", gui_metrics.face_percent()));
+                            let head_label = if m.has_forehead_landmarks { "Head" } else { "Head (est.)" };
+                            ui.label(format!("  {}: {:.1}%", head_label, gui_metrics.head_percent()));
+
+                            ui.add_space(4.0);
+                            ui.label("Features (% of face):");
+                            ui.label(format!("  Eyes: {:.1}% (L:{:.1}% R:{:.1}%)",
+                                m.eyes_ratio(), m.left_eye_ratio(), m.right_eye_ratio()));
+                            ui.label(format!("  Eyebrows: {:.1}%", m.eyebrows_ratio()));
+                            ui.label(format!("  Nose: {:.1}%", m.nose_ratio()));
+                            ui.label(format!("  Mouth: {:.1}% (lips:{:.1}%)",
+                                m.mouth_ratio(), m.lips_ratio()));
+                            ui.label(format!("  Forehead: {:.1}%", m.forehead_ratio()));
+
+                            ui.add_space(4.0);
+                            ui.label("Ratios:");
+                            ui.label(format!("  Face/Head: {:.1}%", m.face_to_head_ratio()));
+                            ui.label(format!("  Eye symmetry: {:.1}%", m.eye_symmetry()));
+                            ui.label(format!("  Eye/Mouth: {:.2}x", m.eye_to_mouth_ratio() / 100.0));
                         }
-                    }
+                    });
                 }
             }
         });
@@ -823,22 +817,4 @@ fn rotate_image(img: &DynamicImage, degrees: f32) -> DynamicImage {
     }
 
     DynamicImage::ImageRgba8(output)
-}
-
-/// Calculate the area of a polygon using the shoelace formula.
-fn polygon_area(points: &[percent_face::Point]) -> f32 {
-    if points.len() < 3 {
-        return 0.0;
-    }
-
-    let mut area = 0.0;
-    let n = points.len();
-
-    for i in 0..n {
-        let j = (i + 1) % n;
-        area += points[i].x * points[j].y;
-        area -= points[j].x * points[i].y;
-    }
-
-    (area / 2.0).abs()
 }

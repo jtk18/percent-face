@@ -1,8 +1,13 @@
 //! # percent-face
 //!
-//! Pure Rust facial landmark detection using Ensemble of Regression Trees (ERT).
+//! Pure Rust facial landmark detection and facial feature measurement.
 //!
-//! This implements the algorithm from "One Millisecond Face Alignment with an
+//! This crate provides:
+//! - **Landmark Detection**: ERT-based facial landmark detection (68 or 81 points)
+//! - **Feature Metrics**: Area calculations for eyes, nose, mouth, eyebrows, forehead
+//! - **Proportions**: Feature sizes relative to face area, symmetry measurements
+//!
+//! Implements the algorithm from "One Millisecond Face Alignment with an
 //! Ensemble of Regression Trees" (Kazemi & Sullivan, 2014).
 //!
 //! ## Algorithm Overview
@@ -13,7 +18,8 @@
 //!    - Each regression tree in the ensemble predicts shape deltas
 //!    - Sum predictions to get shape update
 //!    - Apply update to refine current shape estimate
-//! 3. Return final 68-point facial landmarks
+//! 3. Return final 68/81-point facial landmarks
+//! 4. Optionally calculate facial feature metrics from landmarks
 //!
 //! ## Quick Start
 //!
@@ -74,12 +80,14 @@
 pub mod dlib;
 mod error;
 mod features;
+mod metrics;
 mod model;
 mod tree;
 mod types;
 
 pub use error::{Error, Result};
 pub use features::{find_similarity_transform, GrayImage, ImageAccess, SimilarityTransform2D};
+pub use metrics::{polygon_area, FaceMetrics};
 pub use model::{
     default_5_point_mean_shape, default_68_point_mean_shape, ShapePredictor, ShapePredictorBuilder,
 };
