@@ -6,7 +6,7 @@ This crate implements the algorithm from ["One Millisecond Face Alignment with a
 
 ## Status
 
-**Work in Progress** - Core inference implemented, testing against dlib models in progress.
+**Work in Progress** - Core inference implemented, dlib model loading fully working. Ready for accuracy testing against dlib reference.
 
 ## Algorithm Overview
 
@@ -36,17 +36,17 @@ src/
 ├── tree.rs         # RegressionTree, TreeEnsemble, SplitFeature
 ├── features.rs     # Pixel feature extraction, ImageAccess trait
 ├── model.rs        # ShapePredictor (main entry point)
-├── dlib.rs         # dlib .dat format loader + JSON loader
+├── dlib.rs         # dlib .dat/.dat.bz2 format loader
 └── error.rs        # Error types
 ```
 
 ## Usage
 
 ```rust
-use percent_face::{ShapePredictor, BoundingBox, GrayImage};
+use percent_face::{BoundingBox, GrayImage};
 
-// Load a model (converted from dlib format)
-let model = percent_face::dlib::load_json_model("model.json")?;
+// Load a dlib model directly (supports .dat and .dat.bz2)
+let model = percent_face::dlib::load_dlib_model("shape_predictor_68_face_landmarks.dat.bz2")?;
 
 // Create/load a grayscale image
 let image = GrayImage::new(pixels, width, height);
@@ -80,29 +80,27 @@ impl ImageAccess for MyImage {
 
 ## Loading dlib Models
 
-Two options for loading dlib's pretrained shape predictors:
-
-### Option 1: Python Converter (Recommended)
-
-```bash
-# Decompress model
-bunzip2 shape_predictor_68_face_landmarks.dat.bz2
-
-# Convert to JSON
-python scripts/convert_dlib_model.py shape_predictor_68_face_landmarks.dat model.json
-```
+Load dlib's pretrained shape predictors directly - both compressed (`.dat.bz2`) and uncompressed (`.dat`) formats are supported:
 
 ```rust
-let model = percent_face::dlib::load_json_model("model.json")?;
-```
+// Load compressed model directly (no decompression needed)
+let model = percent_face::dlib::load_dlib_model("shape_predictor_68_face_landmarks.dat.bz2")?;
 
-### Option 2: Direct Binary Loading
-
-```rust
+// Or uncompressed
 let model = percent_face::dlib::load_dlib_model("shape_predictor_68_face_landmarks.dat")?;
 ```
 
-Note: Binary loading may need adjustment for different dlib versions.
+### Obtaining Models
+
+Download pretrained models from the [dlib-models repository](https://github.com/davisking/dlib-models):
+
+```bash
+git clone --depth 1 git@github.com:davisking/dlib-models.git
+```
+
+Available shape predictors:
+- `shape_predictor_5_face_landmarks.dat.bz2` - 5-point model (eyes + nose tip)
+- `shape_predictor_68_face_landmarks.dat.bz2` - Full 68-point iBUG model
 
 ## Implementation Plan
 
@@ -110,16 +108,16 @@ Note: Binary loading may need adjustment for different dlib versions.
 - [x] Core data structures (Point, Shape, BoundingBox)
 - [x] Regression tree structure and traversal
 - [x] Tree ensemble (gradient boosting)
-- [x] Pixel feature extraction
+- [x] Pixel feature extraction framework
 - [x] Cascade inference loop
 - [x] Model serialization (bincode)
-- [x] dlib format loader (binary + JSON)
+- [x] dlib .dat/.dat.bz2 format loader (pure Rust, no Python)
 
 ### Phase 2: Accuracy & Compatibility (In Progress)
-- [ ] Test against dlib models
+- [x] Integrate anchor_idx and deltas into split features
+- [ ] Test inference against dlib reference output
 - [ ] Bilinear interpolation for sub-pixel sampling
 - [ ] Similarity transform normalization between cascade stages
-- [ ] Validate output matches dlib reference
 
 ### Phase 3: Performance
 - [ ] Benchmarks
