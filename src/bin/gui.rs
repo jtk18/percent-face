@@ -42,6 +42,10 @@ struct FaceApp {
     rotation_degrees: f32,
     landmark_model_path: String,
     face_detector_model_path: String,
+
+    // Loading state
+    frame_count: u32,
+    auto_load_stage: u8, // 0=not started, 1=loading fd, 2=loading lm, 3=done
 }
 
 impl FaceApp {
@@ -54,12 +58,64 @@ impl FaceApp {
             face_detector: None,
             landmark_model: None,
             faces: Vec::new(),
-            status: "Load an image and models to begin".to_string(),
+            status: "Starting up...".to_string(),
             min_face_size: 20,
             rotation_degrees: 0.0,
             landmark_model_path: "dlib-models/shape_predictor_68_face_landmarks.dat.bz2"
                 .to_string(),
             face_detector_model_path: "seeta_fd_frontal_v1.0.bin".to_string(),
+            frame_count: 0,
+            auto_load_stage: 0,
+        }
+    }
+
+    fn is_auto_loading(&self) -> bool {
+        self.auto_load_stage > 0 && self.auto_load_stage < 3
+    }
+
+    fn step_auto_load(&mut self) {
+        match self.auto_load_stage {
+            0 => {
+                // Check if we should auto-load
+                let fd_exists = std::path::Path::new(&self.face_detector_model_path).exists();
+                let lm_exists = std::path::Path::new(&self.landmark_model_path).exists();
+
+                if fd_exists || lm_exists {
+                    self.auto_load_stage = 1;
+                    self.status = "Loading models... (1/2) Face detector".to_string();
+                } else {
+                    self.auto_load_stage = 3; // Skip to done
+                    self.status = "Model files not found - load manually".to_string();
+                }
+            }
+            1 => {
+                // Load face detector
+                let fd_exists = std::path::Path::new(&self.face_detector_model_path).exists();
+                if fd_exists {
+                    self.load_face_detector();
+                }
+                self.auto_load_stage = 2;
+                self.status = "Loading models... (2/2) Landmark model".to_string();
+            }
+            2 => {
+                // Load landmark model
+                let lm_exists = std::path::Path::new(&self.landmark_model_path).exists();
+                if lm_exists {
+                    self.load_landmark_model();
+                }
+                self.auto_load_stage = 3;
+
+                // Final status
+                let fd_ok = self.face_detector.is_some();
+                let lm_ok = self.landmark_model.is_some();
+                self.status = match (fd_ok, lm_ok) {
+                    (true, true) => "Ready - load an image to begin".to_string(),
+                    (true, false) => "Face detector loaded, landmark model missing".to_string(),
+                    (false, true) => "Landmark model loaded, face detector missing".to_string(),
+                    (false, false) => "No models loaded - check paths".to_string(),
+                };
+            }
+            _ => {}
         }
     }
 
@@ -216,6 +272,13 @@ impl FaceApp {
 
 impl eframe::App for FaceApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Auto-load models after UI has rendered, one step per frame
+        self.frame_count = self.frame_count.saturating_add(1);
+        if self.frame_count >= 2 && self.auto_load_stage < 3 {
+            self.step_auto_load();
+            ctx.request_repaint(); // Continue to next stage
+        }
+
         egui::TopBottomPanel::top("menu").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
@@ -239,18 +302,47 @@ impl eframe::App for FaceApp {
             ui.heading("Models");
             ui.separator();
 
+            // Show progress bar during auto-loading
+            if self.is_auto_loading() {
+                let progress = match self.auto_load_stage {
+                    1 => 0.25,
+                    2 => 0.75,
+                    _ => 0.0,
+                };
+                ui.add(egui::ProgressBar::new(progress).animate(true));
+                ui.add_space(8.0);
+            }
+
             ui.label("Face Detector Model:");
             ui.text_edit_singleline(&mut self.face_detector_model_path);
-            if ui.button("Load Face Detector").clicked() {
-                self.load_face_detector();
-            }
+            ui.horizontal(|ui| {
+                let btn = ui.add_enabled(
+                    !self.is_auto_loading(),
+                    egui::Button::new("Load Face Detector"),
+                );
+                if btn.clicked() {
+                    self.load_face_detector();
+                }
+                if self.face_detector.is_some() {
+                    ui.label("✓");
+                }
+            });
             ui.add_space(8.0);
 
             ui.label("Landmark Model:");
             ui.text_edit_singleline(&mut self.landmark_model_path);
-            if ui.button("Load Landmark Model").clicked() {
-                self.load_landmark_model();
-            }
+            ui.horizontal(|ui| {
+                let btn = ui.add_enabled(
+                    !self.is_auto_loading(),
+                    egui::Button::new("Load Landmark Model"),
+                );
+                if btn.clicked() {
+                    self.load_landmark_model();
+                }
+                if self.landmark_model.is_some() {
+                    ui.label("✓");
+                }
+            });
             ui.add_space(16.0);
 
             ui.heading("Detection");
