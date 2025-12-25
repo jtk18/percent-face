@@ -11,9 +11,24 @@ bincode = "1.3"
 thiserror = "1.0"
 bzip2 = "0.5"
 
+# Optional GUI dependencies
+eframe = { version = "0.29", optional = true }
+image = { version = "0.25", optional = true }
+rustface = { version = "0.1", optional = true }
+rfd = { version = "0.15", optional = true }
+
+[features]
+default = []
+gui = ["dep:eframe", "dep:image", "dep:rustface", "dep:rfd"]
+
 [[bin]]
 name = "test_load"
 path = "src/bin/test_load.rs"
+
+[[bin]]
+name = "percent-face-gui"
+path = "src/bin/gui.rs"
+required-features = ["gui"]
 
 [dev-dependencies]
 image = "0.25"

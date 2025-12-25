@@ -1,3 +1,4 @@
 /dlib-models
 /target
 .venv/
+*.bin

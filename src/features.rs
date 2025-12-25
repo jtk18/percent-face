@@ -90,6 +90,31 @@ pub fn compute_feature_points(
     (p1, p2)
 }
 
+/// Sample a pixel with bilinear interpolation for sub-pixel accuracy.
+#[inline]
+fn sample_bilinear<I: ImageAccess>(image: &I, x: f32, y: f32) -> f32 {
+    // Get integer coordinates of the four surrounding pixels
+    let x0 = x.floor() as i32;
+    let y0 = y.floor() as i32;
+    let x1 = x0 + 1;
+    let y1 = y0 + 1;
+
+    // Compute fractional parts
+    let fx = x - x0 as f32;
+    let fy = y - y0 as f32;
+
+    // Get the four surrounding pixel values
+    let p00 = image.get_pixel(x0, y0) as f32;
+    let p10 = image.get_pixel(x1, y0) as f32;
+    let p01 = image.get_pixel(x0, y1) as f32;
+    let p11 = image.get_pixel(x1, y1) as f32;
+
+    // Bilinear interpolation
+    let top = p00 * (1.0 - fx) + p10 * fx;
+    let bottom = p01 * (1.0 - fx) + p11 * fx;
+    top * (1.0 - fy) + bottom * fy
+}
+
 /// Compute the pixel intensity difference feature value.
 pub fn compute_feature_value<I: ImageAccess>(
     feature: &SplitFeature,
@@ -99,13 +124,12 @@ pub fn compute_feature_value<I: ImageAccess>(
 ) -> f32 {
     let (p1, p2) = compute_feature_points(feature, shape, bbox);
 
-    // Sample pixel intensities (with bilinear interpolation or nearest neighbor)
-    // For simplicity, using nearest neighbor
-    let i1 = image.get_pixel(p1.x.round() as i32, p1.y.round() as i32);
-    let i2 = image.get_pixel(p2.x.round() as i32, p2.y.round() as i32);
+    // Sample pixel intensities with bilinear interpolation
+    let i1 = sample_bilinear(image, p1.x, p1.y);
+    let i2 = sample_bilinear(image, p2.x, p2.y);
 
     // Return raw pixel difference (dlib uses unscaled values)
-    i1 as f32 - i2 as f32
+    i1 - i2
 }
 
 /// Creates a feature extractor closure for use with tree prediction.
@@ -120,6 +144,24 @@ pub fn make_feature_extractor<'a, I: ImageAccess>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bilinear_interpolation() {
+        // 2x2 image with known values
+        let img = GrayImage::new(vec![0, 100, 200, 50], 2, 2);
+
+        // At integer coordinates, should return exact pixel values
+        assert!((sample_bilinear(&img, 0.0, 0.0) - 0.0).abs() < 0.01);
+        assert!((sample_bilinear(&img, 1.0, 0.0) - 100.0).abs() < 0.01);
+        assert!((sample_bilinear(&img, 0.0, 1.0) - 200.0).abs() < 0.01);
+        assert!((sample_bilinear(&img, 1.0, 1.0) - 50.0).abs() < 0.01);
+
+        // At center (0.5, 0.5), should be average of all four: (0+100+200+50)/4 = 87.5
+        assert!((sample_bilinear(&img, 0.5, 0.5) - 87.5).abs() < 0.01);
+
+        // At (0.5, 0.0), should be average of top row: (0+100)/2 = 50
+        assert!((sample_bilinear(&img, 0.5, 0.0) - 50.0).abs() < 0.01);
+    }
 
     #[test]
     fn gray_image_access() {

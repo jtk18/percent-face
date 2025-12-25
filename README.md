@@ -40,6 +40,24 @@ src/
 └── error.rs        # Error types
 ```
 
+## GUI Demo
+
+A GUI application is available for testing face detection and landmark visualization:
+
+```bash
+# Download the face detection model
+git clone --depth 1 https://github.com/atomashpolskiy/rustface.git /tmp/rustface
+cp /tmp/rustface/model/seeta_fd_frontal_v1.0.bin .
+rm -rf /tmp/rustface
+
+# Run the GUI
+cargo run --features gui --bin percent-face-gui
+```
+
+1. Click "Load Face Detector" and "Load Landmark Model"
+2. Open an image (File > Open or drag & drop)
+3. Click "Detect Faces" to see landmarks overlaid
+
 ## Usage
 
 ```rust
@@ -113,11 +131,11 @@ Available shape predictors:
 - [x] Model serialization (bincode)
 - [x] dlib .dat/.dat.bz2 format loader (pure Rust, no Python)
 
-### Phase 2: Accuracy & Compatibility (In Progress)
+### Phase 2: Accuracy & Compatibility (Done)
 - [x] Integrate anchor_idx and deltas into split features
 - [x] Test inference against dlib reference output (sub-pixel accuracy achieved)
-- [ ] Bilinear interpolation for sub-pixel sampling
-- [ ] Similarity transform normalization between cascade stages
+- [x] Bilinear interpolation for sub-pixel sampling
+- [ ] Similarity transform normalization between cascade stages (optional, for rotated faces)
 
 ### Phase 3: Performance
 - [ ] Benchmarks
