@@ -71,7 +71,8 @@ impl RegressionTree {
                     right,
                 } => {
                     let value = get_feature(feature);
-                    node_idx = if value < *threshold {
+                    // dlib uses: if (diff > threshold) go_left; else go_right;
+                    node_idx = if value > *threshold {
                         *left as usize
                     } else {
                         *right as usize
@@ -159,7 +160,7 @@ mod tests {
                     offset2_x: 0.0,
                     offset2_y: 0.0,
                 },
-                threshold: 0.5,
+                threshold: 50.0, // Raw pixel difference threshold
                 left: 1,
                 right: 2,
             },
@@ -173,12 +174,12 @@ mod tests {
 
         let tree = RegressionTree::new(nodes);
 
-        // Feature value < threshold => go left
-        let result = tree.predict(|_| 0.3);
+        // Feature value > threshold => go left (dlib convention)
+        let result = tree.predict(|_| 100.0);
         assert_eq!(result[0].x, -0.1);
 
-        // Feature value >= threshold => go right
-        let result = tree.predict(|_| 0.7);
+        // Feature value <= threshold => go right
+        let result = tree.predict(|_| 30.0);
         assert_eq!(result[0].x, 0.1);
     }
 

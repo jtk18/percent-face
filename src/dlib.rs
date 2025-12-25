@@ -578,13 +578,8 @@ mod tests {
 
         let model = load_dlib_model(&model_path).expect("Failed to load model");
 
-        // Verify that anchor indices are valid (0-4 for 5-point model)
-        // and offsets are reasonable (not all zeros)
-        let mut found_nonzero_offset = false;
-
-        // Check first cascade's first tree
-        // We can't directly access internal structure, but the model loaded successfully
-        // which means all anchor lookups worked
+        // Verify that anchor indices are valid (0-4 for 5-point model).
+        // The model loaded successfully which means all anchor lookups worked.
         assert_eq!(model.num_landmarks(), 5);
     }
 }

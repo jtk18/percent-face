@@ -115,7 +115,7 @@ Available shape predictors:
 
 ### Phase 2: Accuracy & Compatibility (In Progress)
 - [x] Integrate anchor_idx and deltas into split features
-- [ ] Test inference against dlib reference output
+- [x] Test inference against dlib reference output (sub-pixel accuracy achieved)
 - [ ] Bilinear interpolation for sub-pixel sampling
 - [ ] Similarity transform normalization between cascade stages
 

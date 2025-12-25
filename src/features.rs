@@ -104,8 +104,8 @@ pub fn compute_feature_value<I: ImageAccess>(
     let i1 = image.get_pixel(p1.x.round() as i32, p1.y.round() as i32);
     let i2 = image.get_pixel(p2.x.round() as i32, p2.y.round() as i32);
 
-    // Return normalized difference [-1, 1]
-    (i1 as f32 - i2 as f32) / 255.0
+    // Return raw pixel difference (dlib uses unscaled values)
+    i1 as f32 - i2 as f32
 }
 
 /// Creates a feature extractor closure for use with tree prediction.
@@ -163,7 +163,7 @@ mod tests {
         let value = compute_feature_value(&feature, &shape, &bbox, &img);
 
         // pixel at x=2 is 50, pixel at x=7 is 175
-        // difference = (50 - 175) / 255 ≈ -0.49
-        assert!((value - (-125.0 / 255.0)).abs() < 0.01);
+        // difference = 50 - 175 = -125
+        assert!((value - (-125.0)).abs() < 0.01);
     }
 }
