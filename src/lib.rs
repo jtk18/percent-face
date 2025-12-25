@@ -79,7 +79,7 @@ mod tree;
 mod types;
 
 pub use error::{Error, Result};
-pub use features::{GrayImage, ImageAccess};
+pub use features::{find_similarity_transform, GrayImage, ImageAccess, SimilarityTransform2D};
 pub use model::{
     default_5_point_mean_shape, default_68_point_mean_shape, ShapePredictor, ShapePredictorBuilder,
 };

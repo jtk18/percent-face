@@ -5,7 +5,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
-use crate::features::{make_feature_extractor, ImageAccess};
+use crate::features::{find_similarity_transform, make_feature_extractor, ImageAccess};
 use crate::tree::TreeEnsemble;
 use crate::types::{BoundingBox, Point, Shape};
 
@@ -88,12 +88,17 @@ impl ShapePredictor {
     /// A `Shape` containing the predicted landmark positions in image coordinates.
     pub fn predict<I: ImageAccess>(&self, image: &I, face_rect: &BoundingBox) -> Shape {
         // Start with mean shape, scaled to the face bounding box
-        let mut current_shape = self.initialize_shape(face_rect);
+        let initial_shape = self.initialize_shape(face_rect);
+        let mut current_shape = initial_shape.clone();
 
         // Apply each cascade stage
         for ensemble in &self.cascade {
-            // Create feature extractor for current shape estimate
-            let get_feature = make_feature_extractor(&current_shape, face_rect, image);
+            // Compute similarity transform from initial shape to current shape.
+            // This allows feature extraction to adapt to the current face orientation.
+            let tform = find_similarity_transform(&initial_shape, &current_shape);
+
+            // Create feature extractor for current shape estimate with transform
+            let get_feature = make_feature_extractor(&current_shape, face_rect, image, Some(tform));
 
             // Get shape delta from this ensemble
             let delta = ensemble.predict(get_feature);

@@ -6,6 +6,7 @@ use eframe::egui;
 use image::{DynamicImage, Rgba, RgbaImage};
 use percent_face::{dlib::load_dlib_model, BoundingBox, GrayImage, ShapePredictor};
 use rustface::{Detector, FaceInfo, ImageData};
+use std::f32::consts::PI;
 use std::path::PathBuf;
 
 fn main() -> eframe::Result<()> {
@@ -24,6 +25,7 @@ fn main() -> eframe::Result<()> {
 struct FaceApp {
     // Image state
     original_image: Option<DynamicImage>,
+    rotated_image: Option<DynamicImage>,
     display_texture: Option<egui::TextureHandle>,
     image_path: Option<PathBuf>,
 
@@ -37,6 +39,7 @@ struct FaceApp {
 
     // Settings
     min_face_size: u32,
+    rotation_degrees: f32,
     landmark_model_path: String,
     face_detector_model_path: String,
 }
@@ -45,6 +48,7 @@ impl FaceApp {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         Self {
             original_image: None,
+            rotated_image: None,
             display_texture: None,
             image_path: None,
             face_detector: None,
@@ -52,10 +56,27 @@ impl FaceApp {
             faces: Vec::new(),
             status: "Load an image and models to begin".to_string(),
             min_face_size: 20,
+            rotation_degrees: 0.0,
             landmark_model_path: "dlib-models/shape_predictor_68_face_landmarks.dat.bz2"
                 .to_string(),
             face_detector_model_path: "seeta_fd_frontal_v1.0.bin".to_string(),
         }
+    }
+
+    fn apply_rotation(&mut self) {
+        let Some(ref img) = self.original_image else {
+            return;
+        };
+
+        if self.rotation_degrees.abs() < 0.01 {
+            self.rotated_image = Some(img.clone());
+        } else {
+            // Rotate image around center
+            let rotated = rotate_image(img, self.rotation_degrees);
+            self.rotated_image = Some(rotated);
+        }
+        self.display_texture = None;
+        self.faces.clear();
     }
 
     fn load_face_detector(&mut self) {
@@ -92,10 +113,12 @@ impl FaceApp {
     fn load_image(&mut self, path: PathBuf) {
         match image::open(&path) {
             Ok(img) => {
-                self.original_image = Some(img);
+                self.original_image = Some(img.clone());
+                self.rotated_image = Some(img);
                 self.image_path = Some(path.clone());
                 self.faces.clear();
                 self.display_texture = None;
+                self.rotation_degrees = 0.0;
                 self.status = format!("Loaded: {}", path.display());
             }
             Err(e) => {
@@ -105,7 +128,7 @@ impl FaceApp {
     }
 
     fn detect_faces(&mut self) {
-        let Some(ref img) = self.original_image else {
+        let Some(ref img) = self.rotated_image else {
             self.status = "No image loaded".to_string();
             return;
         };
@@ -121,14 +144,14 @@ impl FaceApp {
 
         let image_data = ImageData::new(gray.as_raw(), width, height);
         self.faces = detector.detect(&image_data);
-        self.status = format!("Detected {} face(s)", self.faces.len());
+        self.status = format!("Detected {} face(s) (rotation: {:.1}°)", self.faces.len(), self.rotation_degrees);
 
         // Clear texture to force redraw
         self.display_texture = None;
     }
 
     fn render_results(&mut self, ctx: &egui::Context) {
-        let Some(ref img) = self.original_image else {
+        let Some(ref img) = self.rotated_image else {
             return;
         };
 
@@ -240,6 +263,53 @@ impl eframe::App for FaceApp {
             }
             ui.add_space(16.0);
 
+            ui.heading("Image Transform");
+            ui.separator();
+
+            let old_rotation = self.rotation_degrees;
+
+            ui.horizontal(|ui| {
+                if ui.button("<<").clicked() {
+                    self.rotation_degrees -= 10.0;
+                }
+                if ui.button("<").clicked() {
+                    self.rotation_degrees -= 1.0;
+                }
+                ui.label(format!("{:+.0}°", self.rotation_degrees));
+                if ui.button(">").clicked() {
+                    self.rotation_degrees += 1.0;
+                }
+                if ui.button(">>").clicked() {
+                    self.rotation_degrees += 10.0;
+                }
+            });
+
+            ui.horizontal(|ui| {
+                if ui.button("-90°").clicked() {
+                    self.rotation_degrees = -90.0;
+                }
+                if ui.button("-45°").clicked() {
+                    self.rotation_degrees = -45.0;
+                }
+                if ui.button("0°").clicked() {
+                    self.rotation_degrees = 0.0;
+                }
+                if ui.button("+45°").clicked() {
+                    self.rotation_degrees = 45.0;
+                }
+                if ui.button("+90°").clicked() {
+                    self.rotation_degrees = 90.0;
+                }
+            });
+
+            // Clamp to valid range
+            self.rotation_degrees = self.rotation_degrees.clamp(-180.0, 180.0);
+
+            if (self.rotation_degrees - old_rotation).abs() > 0.01 {
+                self.apply_rotation();
+            }
+            ui.add_space(16.0);
+
             ui.heading("Status");
             ui.separator();
             ui.label(&self.status);
@@ -263,7 +333,7 @@ impl eframe::App for FaceApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             // Render if we have an image and faces detected
-            if self.original_image.is_some() && self.display_texture.is_none() && !self.faces.is_empty()
+            if self.rotated_image.is_some() && self.display_texture.is_none() && !self.faces.is_empty()
             {
                 self.render_results(ctx);
             }
@@ -282,8 +352,8 @@ impl eframe::App for FaceApp {
                 ui.centered_and_justified(|ui| {
                     ui.image((texture.id(), display_size));
                 });
-            } else if let Some(ref img) = self.original_image {
-                // Show original image without detections
+            } else if let Some(ref img) = self.rotated_image {
+                // Show rotated image without detections
                 let rgba = img.to_rgba8();
                 let (width, height) = rgba.dimensions();
                 let size = [width as usize, height as usize];
@@ -293,7 +363,7 @@ impl eframe::App for FaceApp {
                     .collect();
 
                 let color_image = egui::ColorImage { size, pixels };
-                let texture = ctx.load_texture("original", color_image, Default::default());
+                let texture = ctx.load_texture("rotated", color_image, Default::default());
 
                 let available_size = ui.available_size();
                 let texture_size = texture.size_vec2();
@@ -481,4 +551,69 @@ fn draw_face_connections(img: &mut RgbaImage, points: &[percent_face::Point]) {
             draw_line(img, p1.x as i32, p1.y as i32, p2.x as i32, p2.y as i32, cyan);
         }
     }
+}
+
+/// Rotate an image by the given angle in degrees around its center.
+fn rotate_image(img: &DynamicImage, degrees: f32) -> DynamicImage {
+    let rgba = img.to_rgba8();
+    let (width, height) = rgba.dimensions();
+
+    // Calculate the size of the new image to fit the rotated content
+    let radians = degrees * PI / 180.0;
+    let cos_a = radians.cos().abs();
+    let sin_a = radians.sin().abs();
+
+    let new_width = (width as f32 * cos_a + height as f32 * sin_a).ceil() as u32;
+    let new_height = (width as f32 * sin_a + height as f32 * cos_a).ceil() as u32;
+
+    // Center of original and new image
+    let cx = width as f32 / 2.0;
+    let cy = height as f32 / 2.0;
+    let new_cx = new_width as f32 / 2.0;
+    let new_cy = new_height as f32 / 2.0;
+
+    // Rotation matrix (inverse, to map destination to source)
+    let cos_r = (-radians).cos();
+    let sin_r = (-radians).sin();
+
+    let mut output = RgbaImage::new(new_width, new_height);
+
+    for dy in 0..new_height {
+        for dx in 0..new_width {
+            // Translate to center of new image
+            let x = dx as f32 - new_cx;
+            let y = dy as f32 - new_cy;
+
+            // Rotate (inverse)
+            let src_x = x * cos_r - y * sin_r + cx;
+            let src_y = x * sin_r + y * cos_r + cy;
+
+            // Bilinear interpolation
+            if src_x >= 0.0 && src_x < width as f32 - 1.0 && src_y >= 0.0 && src_y < height as f32 - 1.0
+            {
+                let x0 = src_x.floor() as u32;
+                let y0 = src_y.floor() as u32;
+                let x1 = x0 + 1;
+                let y1 = y0 + 1;
+
+                let fx = src_x - x0 as f32;
+                let fy = src_y - y0 as f32;
+
+                let p00 = rgba.get_pixel(x0, y0);
+                let p10 = rgba.get_pixel(x1, y0);
+                let p01 = rgba.get_pixel(x0, y1);
+                let p11 = rgba.get_pixel(x1, y1);
+
+                let mut pixel = [0u8; 4];
+                for i in 0..4 {
+                    let top = p00[i] as f32 * (1.0 - fx) + p10[i] as f32 * fx;
+                    let bottom = p01[i] as f32 * (1.0 - fx) + p11[i] as f32 * fx;
+                    pixel[i] = (top * (1.0 - fy) + bottom * fy) as u8;
+                }
+                output.put_pixel(dx, dy, Rgba(pixel));
+            }
+        }
+    }
+
+    DynamicImage::ImageRgba8(output)
 }

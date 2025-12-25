@@ -135,7 +135,7 @@ Available shape predictors:
 - [x] Integrate anchor_idx and deltas into split features
 - [x] Test inference against dlib reference output (sub-pixel accuracy achieved)
 - [x] Bilinear interpolation for sub-pixel sampling
-- [ ] Similarity transform normalization between cascade stages (optional, for rotated faces)
+- [x] Similarity transform normalization between cascade stages (for rotated faces)
 
 ### Phase 3: Performance
 - [ ] Benchmarks
