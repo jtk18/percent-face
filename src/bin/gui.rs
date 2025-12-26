@@ -6,8 +6,121 @@ use eframe::egui;
 use image::{DynamicImage, Rgba, RgbaImage};
 use percent_face::{dlib::load_dlib_model, BoundingBox, FaceMetrics, GrayImage, ShapePredictor};
 use rustface::{Detector, FaceInfo, ImageData};
+use std::collections::HashMap;
 use std::f32::consts::PI;
+use std::fs::File;
+use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::thread;
+
+/// Information about a downloadable model
+#[allow(dead_code)]
+struct ModelInfo {
+    name: &'static str,
+    filename: &'static str,
+    url: &'static str,
+    description: &'static str,
+    required: bool,
+}
+
+const AVAILABLE_MODELS: &[ModelInfo] = &[
+    ModelInfo {
+        name: "Face Detector",
+        filename: "seeta_fd_frontal_v1.0.bin",
+        url: "https://github.com/atomashpolskiy/rustface/raw/master/model/seeta_fd_frontal_v1.0.bin",
+        description: "SeetaFace frontal face detector (~1 MB)",
+        required: true,
+    },
+    ModelInfo {
+        name: "81-point Landmarks",
+        filename: "shape_predictor_81_face_landmarks.dat",
+        url: "https://github.com/codeniko/shape_predictor_81_face_landmarks/raw/master/shape_predictor_81_face_landmarks.dat",
+        description: "Full face with forehead (~19 MB)",
+        required: true,
+    },
+    ModelInfo {
+        name: "68-point Landmarks",
+        filename: "shape_predictor_68_face_landmarks.dat.bz2",
+        url: "https://github.com/davisking/dlib-models/raw/master/shape_predictor_68_face_landmarks.dat.bz2",
+        description: "Standard iBUG model (~99 MB)",
+        required: false,
+    },
+    ModelInfo {
+        name: "5-point Landmarks",
+        filename: "shape_predictor_5_face_landmarks.dat.bz2",
+        url: "https://github.com/davisking/dlib-models/raw/master/shape_predictor_5_face_landmarks.dat.bz2",
+        description: "Eyes + nose only (~9 MB)",
+        required: false,
+    },
+];
+
+#[derive(Clone, Debug)]
+enum DownloadStatus {
+    NotDownloaded,
+    Downloading(f32), // progress 0.0 to 1.0
+    Downloaded,
+    Failed(String),
+}
+
+impl PartialEq for DownloadStatus {
+    fn eq(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (DownloadStatus::NotDownloaded, DownloadStatus::NotDownloaded)
+                | (DownloadStatus::Downloaded, DownloadStatus::Downloaded)
+                | (DownloadStatus::Downloading(_), DownloadStatus::Downloading(_))
+                | (DownloadStatus::Failed(_), DownloadStatus::Failed(_))
+        )
+    }
+}
+
+/// Download a model file from the given URL with progress reporting
+fn download_model(
+    filename: &str,
+    url: &str,
+    progress: Arc<Mutex<HashMap<String, DownloadStatus>>>,
+    ctx: egui::Context,
+) -> Result<(), String> {
+    let response = ureq::get(url)
+        .call()
+        .map_err(|e| format!("HTTP error: {}", e))?;
+
+    let content_length = response
+        .header("Content-Length")
+        .and_then(|s| s.parse::<u64>().ok());
+
+    let mut file = File::create(filename)
+        .map_err(|e| format!("Failed to create file: {}", e))?;
+
+    let mut reader = response.into_reader();
+    let mut buffer = [0u8; 32768];
+    let mut downloaded: u64 = 0;
+
+    loop {
+        let bytes_read = reader
+            .read(&mut buffer)
+            .map_err(|e| format!("Read error: {}", e))?;
+        if bytes_read == 0 {
+            break;
+        }
+        file.write_all(&buffer[..bytes_read])
+            .map_err(|e| format!("Write error: {}", e))?;
+
+        downloaded += bytes_read as u64;
+
+        // Update progress
+        if let Some(total) = content_length {
+            let progress_val = downloaded as f32 / total as f32;
+            if let Ok(mut status) = progress.lock() {
+                status.insert(filename.to_string(), DownloadStatus::Downloading(progress_val));
+            }
+            ctx.request_repaint();
+        }
+    }
+
+    Ok(())
+}
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
@@ -66,16 +179,29 @@ struct FaceApp {
     // Settings
     min_face_size: u32,
     rotation_degrees: f32,
-    landmark_model_path: String,
-    face_detector_model_path: String,
+    selected_landmark_idx: usize,  // Index into AVAILABLE_MODELS (1, 2, or 3)
 
     // Loading state
     frame_count: u32,
     auto_load_stage: u8, // 0=not started, 1=loading fd, 2=loading lm, 3=done
+
+    // Download state
+    download_status: Arc<Mutex<HashMap<String, DownloadStatus>>>,
 }
 
 impl FaceApp {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+        // Initialize download status based on which files exist
+        let mut download_status = HashMap::new();
+        for model in AVAILABLE_MODELS {
+            let status = if std::path::Path::new(model.filename).exists() {
+                DownloadStatus::Downloaded
+            } else {
+                DownloadStatus::NotDownloaded
+            };
+            download_status.insert(model.filename.to_string(), status);
+        }
+
         Self {
             original_image: None,
             rotated_image: None,
@@ -88,12 +214,19 @@ impl FaceApp {
             status: "Starting up...".to_string(),
             min_face_size: 20,
             rotation_degrees: 0.0,
-            landmark_model_path: "shape_predictor_81_face_landmarks.dat"
-                .to_string(),
-            face_detector_model_path: "seeta_fd_frontal_v1.0.bin".to_string(),
+            selected_landmark_idx: 1, // Default to 81-point model
             frame_count: 0,
             auto_load_stage: 0,
+            download_status: Arc::new(Mutex::new(download_status)),
         }
+    }
+
+    fn face_detector_model(&self) -> &'static ModelInfo {
+        &AVAILABLE_MODELS[0] // Face detector is always index 0
+    }
+
+    fn landmark_model_info(&self) -> &'static ModelInfo {
+        &AVAILABLE_MODELS[self.selected_landmark_idx]
     }
 
     fn is_auto_loading(&self) -> bool {
@@ -104,20 +237,20 @@ impl FaceApp {
         match self.auto_load_stage {
             0 => {
                 // Check if we should auto-load
-                let fd_exists = std::path::Path::new(&self.face_detector_model_path).exists();
-                let lm_exists = std::path::Path::new(&self.landmark_model_path).exists();
+                let fd_exists = std::path::Path::new(self.face_detector_model().filename).exists();
+                let lm_exists = std::path::Path::new(self.landmark_model_info().filename).exists();
 
                 if fd_exists || lm_exists {
                     self.auto_load_stage = 1;
                     self.status = "Loading models... (1/2) Face detector".to_string();
                 } else {
                     self.auto_load_stage = 3; // Skip to done
-                    self.status = "Model files not found - load manually".to_string();
+                    self.status = "Models not found - download them first".to_string();
                 }
             }
             1 => {
                 // Load face detector
-                let fd_exists = std::path::Path::new(&self.face_detector_model_path).exists();
+                let fd_exists = std::path::Path::new(self.face_detector_model().filename).exists();
                 if fd_exists {
                     self.load_face_detector();
                 }
@@ -126,7 +259,7 @@ impl FaceApp {
             }
             2 => {
                 // Load landmark model
-                let lm_exists = std::path::Path::new(&self.landmark_model_path).exists();
+                let lm_exists = std::path::Path::new(self.landmark_model_info().filename).exists();
                 if lm_exists {
                     self.load_landmark_model();
                 }
@@ -139,7 +272,7 @@ impl FaceApp {
                     (true, true) => "Ready - load an image to begin".to_string(),
                     (true, false) => "Face detector loaded, landmark model missing".to_string(),
                     (false, true) => "Landmark model loaded, face detector missing".to_string(),
-                    (false, false) => "No models loaded - check paths".to_string(),
+                    (false, false) => "No models loaded - download them first".to_string(),
                 };
             }
             _ => {}
@@ -164,7 +297,8 @@ impl FaceApp {
     }
 
     fn load_face_detector(&mut self) {
-        match rustface::create_detector(&self.face_detector_model_path) {
+        let filename = self.face_detector_model().filename;
+        match rustface::create_detector(filename) {
             Ok(mut detector) => {
                 detector.set_min_face_size(self.min_face_size);
                 detector.set_score_thresh(2.0);
@@ -180,7 +314,8 @@ impl FaceApp {
     }
 
     fn load_landmark_model(&mut self) {
-        match load_dlib_model(&self.landmark_model_path) {
+        let filename = self.landmark_model_info().filename;
+        match load_dlib_model(filename) {
             Ok(model) => {
                 self.landmark_model = Some(model);
                 self.status = format!(
@@ -192,6 +327,33 @@ impl FaceApp {
                 self.status = format!("Failed to load landmark model: {}", e);
             }
         }
+    }
+
+    fn start_download(&mut self, filename: &str, url: &str, ctx: &egui::Context) {
+        // Set status to downloading
+        if let Ok(mut status) = self.download_status.lock() {
+            status.insert(filename.to_string(), DownloadStatus::Downloading(0.0));
+        }
+
+        let filename = filename.to_string();
+        let url = url.to_string();
+        let status_map = Arc::clone(&self.download_status);
+        let ctx = ctx.clone();
+
+        thread::spawn(move || {
+            let result = download_model(&filename, &url, Arc::clone(&status_map), ctx.clone());
+            if let Ok(mut status) = status_map.lock() {
+                match result {
+                    Ok(()) => {
+                        status.insert(filename, DownloadStatus::Downloaded);
+                    }
+                    Err(e) => {
+                        status.insert(filename, DownloadStatus::Failed(e));
+                    }
+                }
+            }
+            ctx.request_repaint();
+        });
     }
 
     fn load_image(&mut self, path: PathBuf) {
@@ -400,36 +562,120 @@ impl eframe::App for FaceApp {
                 ui.add_space(8.0);
             }
 
-            ui.label("Face Detector Model:");
-            ui.text_edit_singleline(&mut self.face_detector_model_path);
+            // Get download status snapshot
+            let status_snapshot: HashMap<String, DownloadStatus> =
+                self.download_status.lock().unwrap().clone();
+
+            // Face Detector
+            ui.label("Face Detector:");
+            let fd_model = self.face_detector_model();
+            let fd_status = status_snapshot
+                .get(fd_model.filename)
+                .cloned()
+                .unwrap_or(DownloadStatus::NotDownloaded);
+
             ui.horizontal(|ui| {
-                let btn = ui.add_enabled(
-                    !self.is_auto_loading(),
-                    egui::Button::new("Load Face Detector"),
-                );
-                if btn.clicked() {
-                    self.load_face_detector();
-                }
+                ui.label(fd_model.name);
                 if self.face_detector.is_some() {
                     ui.label("✓");
                 }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    match &fd_status {
+                        DownloadStatus::NotDownloaded | DownloadStatus::Failed(_) => {
+                            if ui.small_button("Download").clicked() {
+                                self.start_download(fd_model.filename, fd_model.url, ctx);
+                            }
+                        }
+                        DownloadStatus::Downloading(_) => {}
+                        DownloadStatus::Downloaded => {
+                            let btn = ui.add_enabled(
+                                !self.is_auto_loading() && self.face_detector.is_none(),
+                                egui::Button::new("Load").small(),
+                            );
+                            if btn.clicked() {
+                                self.load_face_detector();
+                            }
+                        }
+                    }
+                });
             });
+            // Show progress bar if downloading
+            if let DownloadStatus::Downloading(progress) = &fd_status {
+                ui.add(egui::ProgressBar::new(*progress).show_percentage());
+                ctx.request_repaint();
+            }
+            if let DownloadStatus::Failed(err) = &fd_status {
+                ui.label(egui::RichText::new(err).small().color(egui::Color32::RED));
+            }
             ui.add_space(8.0);
 
+            // Landmark Model (dropdown)
             ui.label("Landmark Model:");
-            ui.text_edit_singleline(&mut self.landmark_model_path);
+            let landmark_models: Vec<(usize, &ModelInfo)> = AVAILABLE_MODELS
+                .iter()
+                .enumerate()
+                .filter(|(_, m)| m.filename.contains("shape_predictor"))
+                .collect();
+
+            let current_model = self.landmark_model_info();
             ui.horizontal(|ui| {
-                let btn = ui.add_enabled(
-                    !self.is_auto_loading(),
-                    egui::Button::new("Load Landmark Model"),
-                );
-                if btn.clicked() {
-                    self.load_landmark_model();
-                }
+                egui::ComboBox::from_id_salt("landmark_model")
+                    .selected_text(current_model.name)
+                    .show_ui(ui, |ui| {
+                        for (idx, model) in &landmark_models {
+                            let is_downloaded = status_snapshot
+                                .get(model.filename)
+                                .map(|s| *s == DownloadStatus::Downloaded)
+                                .unwrap_or(false);
+                            let label = if is_downloaded {
+                                format!("{} ✓", model.name)
+                            } else {
+                                model.name.to_string()
+                            };
+                            if ui.selectable_value(&mut self.selected_landmark_idx, *idx, label).clicked() {
+                                // Clear loaded model when selection changes
+                                self.landmark_model = None;
+                            }
+                        }
+                    });
                 if self.landmark_model.is_some() {
                     ui.label("✓");
                 }
             });
+
+            // Download/Load button for selected landmark model
+            let lm_status = status_snapshot
+                .get(current_model.filename)
+                .cloned()
+                .unwrap_or(DownloadStatus::NotDownloaded);
+
+            ui.horizontal(|ui| {
+                match &lm_status {
+                    DownloadStatus::NotDownloaded | DownloadStatus::Failed(_) => {
+                        if ui.button("Download").clicked() {
+                            self.start_download(current_model.filename, current_model.url, ctx);
+                        }
+                    }
+                    DownloadStatus::Downloading(_) => {}
+                    DownloadStatus::Downloaded => {
+                        let btn = ui.add_enabled(
+                            !self.is_auto_loading() && self.landmark_model.is_none(),
+                            egui::Button::new("Load"),
+                        );
+                        if btn.clicked() {
+                            self.load_landmark_model();
+                        }
+                    }
+                }
+            });
+            // Show progress bar if downloading
+            if let DownloadStatus::Downloading(progress) = &lm_status {
+                ui.add(egui::ProgressBar::new(*progress).show_percentage());
+                ctx.request_repaint();
+            }
+            if let DownloadStatus::Failed(err) = &lm_status {
+                ui.label(egui::RichText::new(err).small().color(egui::Color32::RED));
+            }
             ui.add_space(16.0);
 
             ui.heading("Detection");
