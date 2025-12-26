@@ -85,6 +85,15 @@ build-gui:
 	@echo "$(CYAN)Building with GUI support...$(RESET)"
 	cargo build --release --features gui
 
+# Build CLI
+build-cli:
+	@echo "$(CYAN)Building CLI...$(RESET)"
+	cargo build --release --features cli
+
+# Build everything
+build-all: build build-gui build-cli
+	@echo "$(GREEN)All builds complete.$(RESET)"
+
 # Run tests
 test:
 	@echo "$(CYAN)Running tests...$(RESET)"
@@ -94,6 +103,10 @@ test:
 run-gui: $(FACE_DETECTOR) $(LANDMARKS_81)
 	@echo "$(CYAN)Starting GUI...$(RESET)"
 	cargo run --release --features gui --bin percent-face-gui
+
+# Run CLI (use: make run-cli ARGS="image.jpg --json")
+run-cli: $(FACE_DETECTOR) $(LANDMARKS_81)
+	cargo run --release --features cli --bin percent-face -- $(ARGS)
 
 # Download all models
 download-models: download-face-detector download-landmarks-81
@@ -169,11 +182,15 @@ help:
 	@echo "  make setup           - Download models and build (recommended first run)"
 	@echo "  make build           - Build library only"
 	@echo "  make build-gui       - Build with GUI support"
+	@echo "  make build-cli       - Build CLI tool"
+	@echo "  make build-all       - Build everything"
 	@echo "  make dev             - Development build (debug, faster)"
 	@echo ""
 	@echo "$(GREEN)Run:$(RESET)"
-	@echo "  make run-gui         - Run the GUI application"
-	@echo "  make run-dev         - Run in development mode"
+	@echo "  make run-gui                     - Run the GUI application"
+	@echo "  make run-cli ARGS=\"image.jpg\"    - Analyze image (human output)"
+	@echo "  make run-cli ARGS=\"img.jpg -j\"   - Analyze image (JSON output)"
+	@echo "  make run-dev                     - Run GUI in development mode"
 	@echo ""
 	@echo "$(GREEN)Models:$(RESET)"
 	@echo "  make download-models     - Download required models (face detector + 81-point)"

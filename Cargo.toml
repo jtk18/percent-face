@@ -17,9 +17,14 @@ image = { version = "0.25", optional = true }
 rustface = { version = "0.1", optional = true }
 rfd = { version = "0.15", optional = true }
 
+# Optional CLI dependencies
+clap = { version = "4.4", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
+
 [features]
 default = []
 gui = ["dep:eframe", "dep:image", "dep:rustface", "dep:rfd"]
+cli = ["dep:clap", "dep:serde_json", "dep:image", "dep:rustface"]
 
 [[bin]]
 name = "test_load"
@@ -29,6 +34,11 @@ path = "src/bin/test_load.rs"
 name = "percent-face-gui"
 path = "src/bin/gui.rs"
 required-features = ["gui"]
+
+[[bin]]
+name = "percent-face"
+path = "src/bin/cli.rs"
+required-features = ["cli"]
 
 [dev-dependencies]
 image = "0.25"

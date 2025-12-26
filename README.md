@@ -19,9 +19,60 @@ make run-gui
 - **Pure Rust** - No C++ dependencies, native dlib model loading
 - **Sub-pixel accuracy** - Bilinear interpolation and similarity transforms
 - **Multiple models** - Supports 5, 68, and 81-point landmark models
+- **CLI tool** - Analyze images with human-readable or JSON output
 - **GUI application** - Visual face detection and landmark overlay
-- **Face metrics** - Calculate face area as percentage of image
+- **Face metrics** - Calculate feature areas as percentage of face/image
 - **Cross-platform** - Linux, macOS, and Windows
+
+## CLI Tool
+
+Analyze images from the command line:
+
+```bash
+# Human-readable output
+percent-face image.jpg
+
+# JSON output
+percent-face image.jpg --json
+
+# Save to file
+percent-face image.jpg --json -o results.json
+
+# With custom models
+percent-face image.jpg --detector model.bin --landmarks model.dat
+```
+
+Example output:
+```
+Image: photo.jpg (1920x1080)
+Faces detected: 1
+
+--- Face 1 ---
+Bounding box: 400x400 at (760, 200)
+Landmarks: 81 points
+
+Image Coverage:
+  Face: 7.7% of image
+  Head: 10.9% of image
+
+Features (% of face):
+  Eyes:     1.8% (L: 0.9%, R: 0.9%)
+  Eyebrows: 2.1%
+  Nose:     3.2%
+  Mouth:    4.5% (lips: 3.8%)
+  Forehead: 5.8%
+
+Ratios:
+  Face/Head:    70.5%
+  Eye symmetry: 98.2%
+  Eye/Mouth:    0.40x
+```
+
+Build and run:
+```bash
+make build-cli
+make run-cli ARGS="image.jpg --json"
+```
 
 ## GUI Demo
 

@@ -4,12 +4,13 @@
 //! including area calculations for individual features and ratios between them.
 
 use crate::types::{Point, Shape};
+use serde::{Deserialize, Serialize};
 
 /// Facial feature areas calculated from landmarks.
 ///
 /// All areas are in square pixels. Use the ratio methods to get
 /// proportions relative to the face or head area.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FaceMetrics {
     /// Area enclosed by the jawline (points 0-16)
     pub jawline_area: f32,
