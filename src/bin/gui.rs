@@ -12,6 +12,8 @@ use std::path::PathBuf;
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1024.0, 768.0]),
+        // Allow software rendering fallback for environments without GPU (WSL, SSH, etc.)
+        hardware_acceleration: eframe::HardwareAcceleration::Preferred,
         ..Default::default()
     };
 
