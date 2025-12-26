@@ -103,8 +103,8 @@ struct RatiosOutput {
     mouth_percent: f32,
     lips_percent: f32,
     forehead_percent: f32,
-    /// Head/face relationship
-    face_to_head_percent: f32,
+    /// Lower face (jawline) as % of full face
+    lower_face_percent: f32,
     /// Symmetry and inter-feature
     eye_symmetry: f32,
     eye_to_mouth_ratio: f32,
@@ -217,7 +217,7 @@ fn run(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
                     mouth_percent: m.mouth_ratio(),
                     lips_percent: m.lips_ratio(),
                     forehead_percent: m.forehead_ratio(),
-                    face_to_head_percent: m.face_to_head_ratio(),
+                    lower_face_percent: m.lower_face_ratio(),
                     eye_symmetry: m.eye_symmetry(),
                     eye_to_mouth_ratio: m.eye_to_mouth_ratio() / 100.0,
                     face_of_image_percent: m.jawline_area / image_area * 100.0,
@@ -290,7 +290,7 @@ fn format_human_readable(output: &Output) -> String {
         s.push_str(&format!("  Forehead: {:.1}%\n", face.ratios.forehead_percent));
 
         s.push_str("\nRatios:\n");
-        s.push_str(&format!("  Face/Head:    {:.1}%\n", face.ratios.face_to_head_percent));
+        s.push_str(&format!("  Lower face:   {:.1}%\n", face.ratios.lower_face_percent));
         s.push_str(&format!("  Eye symmetry: {:.1}%\n", face.ratios.eye_symmetry));
         s.push_str(&format!("  Eye/Mouth:    {:.2}x\n", face.ratios.eye_to_mouth_ratio));
     }

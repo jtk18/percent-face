@@ -523,7 +523,7 @@ impl eframe::App for FaceApp {
 
                             ui.add_space(4.0);
                             ui.label("Ratios:");
-                            ui.label(format!("  Face/Head: {:.1}%", m.face_to_head_ratio()));
+                            ui.label(format!("  Lower face: {:.1}%", m.lower_face_ratio()));
                             ui.label(format!("  Eye symmetry: {:.1}%", m.eye_symmetry()));
                             ui.label(format!("  Eye/Mouth: {:.2}x", m.eye_to_mouth_ratio() / 100.0));
                         }

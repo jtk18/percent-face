@@ -140,73 +140,83 @@ impl FaceMetrics {
         (self.outer_mouth_area - self.inner_mouth_area).max(0.0)
     }
 
-    // === Ratios relative to jawline (face) area ===
+    /// Total face area (head_area, which includes forehead).
+    /// This is the full visible face outline from hairline to chin.
+    /// For 81-point models, uses actual forehead landmarks.
+    /// For 68-point models, uses estimated forehead.
+    pub fn face_area(&self) -> f32 {
+        self.head_area
+    }
+
+    /// Lower face area (jawline only, points 0-16).
+    /// Use this if you want ratios against just the lower face.
+    pub fn lower_face_area(&self) -> f32 {
+        self.jawline_area
+    }
+
+    // === Ratios relative to full face (head) area ===
 
     /// Left eye as percentage of face area
     pub fn left_eye_ratio(&self) -> f32 {
-        ratio(self.left_eye_area, self.jawline_area)
+        ratio(self.left_eye_area, self.head_area)
     }
 
     /// Right eye as percentage of face area
     pub fn right_eye_ratio(&self) -> f32 {
-        ratio(self.right_eye_area, self.jawline_area)
+        ratio(self.right_eye_area, self.head_area)
     }
 
     /// Total eyes as percentage of face area
     pub fn eyes_ratio(&self) -> f32 {
-        ratio(self.total_eye_area(), self.jawline_area)
+        ratio(self.total_eye_area(), self.head_area)
     }
 
     /// Left eyebrow as percentage of face area
     pub fn left_eyebrow_ratio(&self) -> f32 {
-        ratio(self.left_eyebrow_area, self.jawline_area)
+        ratio(self.left_eyebrow_area, self.head_area)
     }
 
     /// Right eyebrow as percentage of face area
     pub fn right_eyebrow_ratio(&self) -> f32 {
-        ratio(self.right_eyebrow_area, self.jawline_area)
+        ratio(self.right_eyebrow_area, self.head_area)
     }
 
     /// Total eyebrows as percentage of face area
     pub fn eyebrows_ratio(&self) -> f32 {
-        ratio(self.total_eyebrow_area(), self.jawline_area)
+        ratio(self.total_eyebrow_area(), self.head_area)
     }
 
     /// Nose as percentage of face area
     pub fn nose_ratio(&self) -> f32 {
-        ratio(self.nose_area, self.jawline_area)
+        ratio(self.nose_area, self.head_area)
     }
 
     /// Outer mouth as percentage of face area
     pub fn mouth_ratio(&self) -> f32 {
-        ratio(self.outer_mouth_area, self.jawline_area)
+        ratio(self.outer_mouth_area, self.head_area)
     }
 
     /// Lips (outer - inner mouth) as percentage of face area
     pub fn lips_ratio(&self) -> f32 {
-        ratio(self.lip_area(), self.jawline_area)
+        ratio(self.lip_area(), self.head_area)
     }
 
     /// Inner mouth (mouth opening) as percentage of face area
     pub fn mouth_opening_ratio(&self) -> f32 {
-        ratio(self.inner_mouth_area, self.jawline_area)
+        ratio(self.inner_mouth_area, self.head_area)
     }
 
     /// Forehead as percentage of face area
     pub fn forehead_ratio(&self) -> f32 {
-        ratio(self.forehead_area, self.jawline_area)
-    }
-
-    // === Ratios relative to head area ===
-
-    /// Jawline (face) as percentage of head area
-    pub fn face_to_head_ratio(&self) -> f32 {
-        ratio(self.jawline_area, self.head_area)
-    }
-
-    /// Forehead as percentage of head area
-    pub fn forehead_to_head_ratio(&self) -> f32 {
         ratio(self.forehead_area, self.head_area)
+    }
+
+    // === Lower face vs full face ratios ===
+
+    /// Lower face (jawline) as percentage of full face (head) area.
+    /// This shows how much of the face is below the eyebrows.
+    pub fn lower_face_ratio(&self) -> f32 {
+        ratio(self.jawline_area, self.head_area)
     }
 
     // === Inter-feature ratios ===

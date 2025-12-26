@@ -165,9 +165,11 @@ if let Some(metrics) = FaceMetrics::from_shape(&landmarks) {
 ```
 
 Available measurements:
-- **Areas**: jawline, head, left/right eyes, eyebrows, nose, mouth (outer/inner), forehead
-- **Ratios**: Each feature as % of face, face-to-head ratio, inter-feature comparisons
+- **Areas**: jawline (lower face), head (full face), left/right eyes, eyebrows, nose, mouth (outer/inner), forehead
+- **Ratios**: Each feature as % of full face area, lower-face ratio, inter-feature comparisons
 - **Symmetry**: Eye symmetry score (100% = perfect symmetry)
+
+Note: Feature ratios are calculated against `head_area` (full face including forehead), not just the jawline. This gives more intuitive percentages where all features sum closer to 100%.
 
 ### Custom Image Types
 
